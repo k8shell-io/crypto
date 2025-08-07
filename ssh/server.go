@@ -159,6 +159,9 @@ type ServerConfig struct {
 	// GSSAPIWithMICConfig includes gssapi server and callback, which if both non-nil, is used
 	// when gssapi-with-mic authentication is selected (RFC 4462 section 3).
 	GSSAPIWithMICConfig *GSSAPIWithMICConfig
+
+	// Hotfix: AllowedAuthsCallback returns allowed auths for the user
+	AllowedAuthsCallback func(conn ConnMetadata) ServerAuthCallbacks
 }
 
 // AddHostKey adds a private key as a host key. If an existing host
@@ -467,6 +470,9 @@ type ServerAuthCallbacks struct {
 
 	// GSSAPIWithMICConfig behaves like [ServerConfig.GSSAPIWithMICConfig].
 	GSSAPIWithMICConfig *GSSAPIWithMICConfig
+
+	// Hotfix: AllowedAuthsCallback returns allowed auths for the user
+	AllowedAuthsCallback func(conn ConnMetadata) ServerAuthCallbacks
 }
 
 // PartialSuccessError can be returned by any of the [ServerConfig]
@@ -529,6 +535,7 @@ func (s *connection) serverAuthenticate(config *ServerConfig) (*Permissions, err
 		PublicKeyCallback:           config.PublicKeyCallback,
 		KeyboardInteractiveCallback: config.KeyboardInteractiveCallback,
 		GSSAPIWithMICConfig:         config.GSSAPIWithMICConfig,
+		AllowedAuthsCallback:        config.AllowedAuthsCallback,
 	}
 
 userAuthLoop:
@@ -565,7 +572,12 @@ userAuthLoop:
 				s.user, userAuthReq.User)
 		}
 
+		prevUser := s.user
 		s.user = userAuthReq.User
+
+		if s.user != prevUser && authConfig.AllowedAuthsCallback != nil {
+			authConfig = authConfig.AllowedAuthsCallback(s)
+		}
 
 		if !calledBannerCallback && config.BannerCallback != nil {
 			calledBannerCallback = true
