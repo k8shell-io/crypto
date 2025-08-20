@@ -50,6 +50,8 @@ type Channel interface {
 	// Read reads up to len(data) bytes from the channel.
 	Read(data []byte) (int, error)
 
+	ReadBufferSize() (int, error)
+
 	// Write writes len(data) bytes to the channel.
 	Write(data []byte) (int, error)
 
@@ -651,3 +653,9 @@ func (ch *channel) LocalID() uint32 {
 	return ch.localId
 }
 
+func (ch *channel) ReadBufferSize() (int, error) {
+	if !ch.decided {
+		return 0, errUndecided
+	}
+	return ch.pending.Size()
+}

@@ -95,3 +95,18 @@ func (b *buffer) Read(buf []byte) (n int, err error) {
 	}
 	return
 }
+
+func (b *buffer) Size() (n int, err error) {
+	b.Cond.L.Lock()
+	defer b.Cond.L.Unlock()
+
+	for e := b.head; e != nil; e = e.next {
+		n += len(e.buf)
+	}
+
+	if n == 0 && b.closed {
+		err = io.EOF
+	}
+
+	return
+}
