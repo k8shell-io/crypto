@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -209,6 +210,69 @@ func TestBannerCallback(t *testing.T) {
 	}
 }
 
+func TestBannerMalformed(t *testing.T) {
+	banner := Marshal(&userAuthBannerMsg{Message: "Hello World"})
+	// The empty language tag is encoded as four zero bytes at the end.
+	noLanguage := banner[:len(banner)-4]
+	trailingData := append(slices.Clip(banner), "extra"...)
+
+	for _, tt := range []struct {
+		name    string
+		packet  []byte
+		wantErr bool
+	}{
+		{"trailing data", trailingData, false},
+		{"missing language tag", noLanguage, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c1, c2, err := netPipe()
+			if err != nil {
+				t.Fatalf("netPipe: %v", err)
+			}
+			defer c1.Close()
+			defer c2.Close()
+
+			serverConf := &ServerConfig{
+				PasswordCallback: func(conn ConnMetadata, password []byte) (*Permissions, error) {
+					if err := conn.(*connection).transport.writePacket(tt.packet); err != nil {
+						return nil, err
+					}
+					return &Permissions{}, nil
+				},
+			}
+			serverConf.AddHostKey(testSigners["rsa"])
+			go NewServerConn(c1, serverConf)
+
+			var receivedBanner string
+			clientConf := ClientConfig{
+				Auth: []AuthMethod{
+					Password("123"),
+				},
+				User:            "user",
+				HostKeyCallback: InsecureIgnoreHostKey(),
+				BannerCallback: func(message string) error {
+					receivedBanner = message
+					return nil
+				},
+			}
+
+			_, _, _, err = NewClientConn(c2, "", &clientConf)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("handshake succeeded, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := "Hello World"; receivedBanner != want {
+				t.Errorf("got banner %q; want %q", receivedBanner, want)
+			}
+		})
+	}
+}
+
 func TestNewClientConn(t *testing.T) {
 	errHostKeyMismatch := errors.New("host key mismatch")
 
@@ -361,6 +425,72 @@ func TestUnsupportedAlgorithm(t *testing.T) {
 				}
 			} else if tt.wantError != "" {
 				t.Errorf("%s: succeeded, but want error string %q", tt.name, tt.wantError)
+			}
+		})
+	}
+}
+
+func TestCBCCiphers(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		config Config
+	}{
+		{
+			"AES-CBC",
+			Config{
+				Ciphers: []string{InsecureCipherAES128CBC},
+				MACs:    []string{HMACSHA256},
+			},
+		},
+		{
+			"AES-CBC-ETM",
+			Config{
+				Ciphers: []string{InsecureCipherAES128CBC},
+				MACs:    []string{HMACSHA512ETM},
+			},
+		},
+		{
+			"3DES-CBC",
+			Config{
+				Ciphers: []string{InsecureCipherTripleDESCBC},
+				MACs:    []string{HMACSHA1},
+			},
+		},
+		{
+			"3DES-CBC-ETM",
+			Config{
+				Ciphers: []string{InsecureCipherTripleDESCBC},
+				MACs:    []string{HMACSHA256ETM},
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c1, c2, err := netPipe()
+			if err != nil {
+				t.Fatalf("netPipe: %v", err)
+			}
+			defer c1.Close()
+			defer c2.Close()
+
+			serverConf := &ServerConfig{
+				Config: tt.config,
+				PasswordCallback: func(conn ConnMetadata, password []byte) (*Permissions, error) {
+					return &Permissions{}, nil
+				},
+			}
+			serverConf.AddHostKey(testSigners["rsa"])
+			go NewServerConn(c1, serverConf)
+
+			clientConf := &ClientConfig{
+				User:   "testuser",
+				Config: tt.config,
+				Auth: []AuthMethod{
+					Password("testpw"),
+				},
+				HostKeyCallback: InsecureIgnoreHostKey(),
+			}
+			if _, _, _, err := NewClientConn(c2, "", clientConf); err != nil {
+				t.Errorf("unexpected error %v", err)
 			}
 		})
 	}

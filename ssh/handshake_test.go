@@ -195,7 +195,7 @@ func TestHandshakeBasic(t *testing.T) {
 		}
 
 		want := []byte{msgRequestSuccess, byte(i)}
-		if bytes.Compare(p, want) != 0 {
+		if !bytes.Equal(p, want) {
 			t.Errorf("message %d: got %v, want %v", i, p, want)
 		}
 	}
@@ -1330,13 +1330,13 @@ func TestAlgorithmNegotiationError(t *testing.T) {
 
 	_, _, _, err = NewClientConn(c2, "", clientConf)
 	if err == nil {
-		t.Fatal("client connection succeded expected algorithm negotiation error")
+		t.Fatal("client connection succeeded expected algorithm negotiation error")
 	}
 	var negotiationError *AlgorithmNegotiationError
 	if !errors.As(err, &negotiationError) {
 		t.Fatalf("expected algorithm negotiation error, got %v", err)
 	}
-	expectedErrorString := fmt.Sprintf("ssh: handshake failed: ssh: no common algorithm for client to server cipher; we offered: %v, peer offered: %v",
+	expectedErrorString := fmt.Sprintf("ssh: handshake failed: ssh: no common algorithm for client to server cipher; we offered: %q, peer offered: %q",
 		clientConf.Ciphers, serverConf.Ciphers)
 	if err.Error() != expectedErrorString {
 		t.Fatalf("expected error string %q, got %q", expectedErrorString, err.Error())
@@ -1352,7 +1352,7 @@ func TestAlgorithmNegotiationError(t *testing.T) {
 	if !errors.As(err, &negotiationError) {
 		t.Fatalf("expected algorithm negotiation error, got %v", err)
 	}
-	expectedErrorString = fmt.Sprintf("ssh: no common algorithm for client to server cipher; we offered: %v, peer offered: %v",
+	expectedErrorString = fmt.Sprintf("ssh: no common algorithm for client to server cipher; we offered: %q, peer offered: %q",
 		serverConf.Ciphers, clientConf.Ciphers)
 	if err.Error() != expectedErrorString {
 		t.Fatalf("expected error string %q, got %q", expectedErrorString, err.Error())
